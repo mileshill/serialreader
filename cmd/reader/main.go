@@ -28,15 +28,7 @@ func currentUTCTime() CurrentTime {
 	}
 }
 
-// Used to insert into local database
-type Record struct {
-	timestamp     int64
-	humanReadable string
-	payload       string
-	synced        bool
-	syncedTime    int64
-}
-
+// connectToPort
 func connectToPort(portName string, baudRate uint) io.ReadWriteCloser {
 	log.Printf("main.connectToPort - START - PORT %s BAUDRATE %d", portName, baudRate)
 
@@ -87,18 +79,20 @@ func main() {
 	// Outer Loop - Handles timeouts from the serial reader and insert into database
 	for {
 		var data strings.Builder // Build record
-		buff := make([]byte, 1)  // Buffer to hold the data
+		buff := make([]byte, 2)  // Buffer to hold the data
 		// Inner Loop - Reads bytes until terminating character is received
 		for {
 			n, _ := port.Read(buff)
 			if n == 0 {
 				break
 			}
-			if string(buff[0]) == "\n" {
+			if string(buff) == "\r\n" {
 				break
 			}
+			for _, byte := range buff {
+				data.WriteByte(byte)
+			}
 
-			data.WriteByte(buff[0])
 		}
 		// currentTime will be the time of the data insert it. It serves as the watermark for data ingestion
 		currentTime := currentUTCTime()
@@ -111,11 +105,9 @@ func main() {
 		// Prep the data
 		record := bson.D{
 			{"timestamp", int(currentTime.timestamp)},
-			{"humanReadable", currentTime.humanReadable},
 			{"payload", strings.Replace(data.String(), "\u0000", ",", -1)},
 			{"synced", false},
 		}
-
 
 		// Insert
 		insertResult, err := client.Database(mp.Database).Collection(mp.Collection).InsertOne(ctx, record)
@@ -123,6 +115,7 @@ func main() {
 			log.Printf("%s", insertResult)
 			log.Panicf("main - Reader Loop - Failed to Insert: %v", err)
 		}
+		log.Printf("Insert result: %s", insertResult)
 
 		// Update loop start time to ensure timeout failures occur only after
 		// two minutes of no new data
