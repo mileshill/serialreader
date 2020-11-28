@@ -3,10 +3,6 @@ services:
     mongodb:
         image: 'mongo'
         container_name: 'mongodb'
-#        environment:
-#            - MONGO_INITDB_DATABASE=serial
-#            - MONGO_INITDB_ROOT_USERNAME=databox
-#            - MONGO_INITDB_ROOT_PASSWORD=databox
         volumes:
             - $HOME/mongo-volume:/data/db
         ports:
