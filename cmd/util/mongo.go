@@ -64,11 +64,10 @@ func UpdateSyncStatus(client *mongo.Client, mp MongoParams, synced bson.A) {
 	filter := bson.D{{"_id", bson.D{{"$in", synced}}}} // Search by array of _id
 
 	updates := bson.D{{"$set", bson.D{{"synced", true}}}} // Update sync status
-	result, err := col.UpdateMany(mp.ContextConnect, filter, updates)
+	_, err := col.UpdateMany(mp.ContextConnect, filter, updates)
 	if err != nil {
 		log.Fatalf("mongo.UpdateSyncStatus - %v", err)
 	}
-	log.Printf("mongo.UpdateSyncStatus - Matched %d, Updated %d ", result.MatchedCount, result.ModifiedCount)
 }
 
 // DeleteSynced clears the database of any records already sent to the API. This keeps memory usage down

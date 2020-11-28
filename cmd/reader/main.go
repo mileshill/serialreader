@@ -115,7 +115,7 @@ func main() {
 			log.Printf("%s", insertResult)
 			log.Panicf("main - Reader Loop - Failed to Insert: %v", err)
 		}
-		log.Printf("Insert result: %s", insertResult)
+		log.Printf("Insert result id: %s", insertResult.InsertedID)
 
 		// Update loop start time to ensure timeout failures occur only after
 		// two minutes of no new data

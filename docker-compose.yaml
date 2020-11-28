@@ -1,0 +1,35 @@
+version: '3'
+services:
+    mongodb:
+        image: 'mongo'
+        container_name: 'mongodb'
+#        environment:
+#            - MONGO_INITDB_DATABASE=serial
+#            - MONGO_INITDB_ROOT_USERNAME=databox
+#            - MONGO_INITDB_ROOT_PASSWORD=databox
+        volumes:
+            - $HOME/mongo-volume:/data/db
+        ports:
+            - '27017-27019:27017-27019'
+    reader:
+        build:
+            context: .
+            dockerfile: reader.dockerfile
+        container_name: 'reader'
+        env_file:
+            - general.env
+        devices:
+            - "/dev/ttyS0:/dev/ttyS0"
+        restart: always
+        depends_on:
+            - mongodb
+    producer:
+        build:
+            context: .
+            dockerfile: producer.dockerfile
+        container_name: 'producer'
+        env_file:
+            - general.env
+        restart: always
+        depends_on:
+            - mongodb
