@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"github.com/mileshill/serialreader/cmd/util"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
-	"os"
+	"net/http"
 	"time"
 )
 
@@ -20,15 +22,15 @@ type Record struct {
 
 // RecordForPayload encodes for the HTTP POST to API
 type RecordForPayload struct {
-	Timestamp int    `json:"timestamp"`
-	Device    string `json:"device"`
+	Timestamp int    `json:"timestamp_utc_recorded"`
+	Hostname string `json:"hostname"`
 	Payload   string `json:"payload"`
 }
 
 // RequestPayload is the full body to be JSON marshalled for API consumption
 type RequestPayload struct {
-	Timestamp int                `json:"timestamp"`
-	Device    string             `json:"device"`
+	Timestamp int                `json:"timestamp_utc_transmitted"`
+	Hostname    string             `json:"hostname"`
 	Data      []RecordForPayload `json:"data"`
 }
 
@@ -50,9 +52,21 @@ func WorkerDeleteRecords(client *mongo.Client, mp util.MongoParams) {
 	}
 }
 
+//
+func removeDuplicateRecords(records []RecordForPayload) []RecordForPayload {
+	keys := make(map[int]bool)
+	var list []RecordForPayload
+	for _, entry := range records {
+		if _, value := keys[entry.Timestamp]; !value {
+			keys[entry.Timestamp] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
 // main
 func main() {
-
 	// Connect to Mongo
 	mp := util.LoadMongoParams()
 	client := util.ConnectToMongo(mp.ContextConnect, mp.URI, mp.Database, mp.Collection)
@@ -68,13 +82,18 @@ func main() {
 	go WorkerDeleteRecords(client, mp)
 
 	// Host info
-	device, err := os.Hostname()
-	if err != nil {
-		log.Fatalf("main - Could not get hostname - %v", err)
+	device := util.GetEnvWithFallback("HOSTNAME", "")
+	if device == "" {
+		log.Fatalf("main - HOSTNAME not set as env var")
 	}
 
 	// Get oldest non-synced records
-	batchSize := 25
+	apiUrl := util.GetEnvWithFallback("API_ENDPOINT", "")
+	if apiUrl == "" {
+		log.Fatalf("Error - `API` not set in environment")
+	}
+
+	batchSize := 25  // Max size allowed by Dynamodb
 	for {
 		cursor := util.GetNextBatch(client, mp, batchSize)
 
@@ -95,22 +114,38 @@ func main() {
 		for _, rec := range records {
 			recordsPayload = append(recordsPayload, RecordForPayload{
 				Timestamp: rec.Timestamp,
-				Device:    device,
+				Hostname: device,
 				Payload:   rec.Payload,
 			})
 		}
-		log.Printf("Synced %d to API", len(records))
 
 		// Build payload from cursor to send to API
-		//payload := &RequestPayload{
-		//	Timestamp: int(time.Now().Unix()),
-		//	Device:    device,
-		//	Data:      recordsPayload,
-		//}
-		//payloadBuffer, err := json.Marshal(payload)
-		//if err != nil {
-		//	log.Fatalf("Failed to marshal to json - %v", err)
-		//}
+		payload := &RequestPayload{
+			Timestamp: int(time.Now().Unix()),
+			Hostname:    device,
+			Data:      removeDuplicateRecords(recordsPayload),
+		}
+		payloadMarshal, err := json.Marshal(payload)
+
+		if err != nil {
+			log.Fatalf("Failed to marshal to json - %v", err)
+		}
+
+		resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))
+		if err != nil {
+			log.Fatalf("Error POST to API  - %v", err)
+		}
+		if resp.StatusCode != 201 {
+			var body []byte
+			_, err := resp.Body.Read(body)
+			if err != nil {
+				log.Fatalf("Failed to decode API response with Code %d - %v", resp.StatusCode, err)
+			}
+			log.Fatalf("Failed to write to API - %s", string(body))
+		}
+		if resp.StatusCode == 201 {
+			log.Printf("Synced %d records to API", len(payload.Data))
+		}
 
 
 		// Array of ids to update

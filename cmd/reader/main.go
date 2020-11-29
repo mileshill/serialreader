@@ -6,6 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"io"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,14 @@ func connectToPort(portName string, baudRate uint) io.ReadWriteCloser {
 	return port
 }
 
+func formatPayloadForDatabase(payload string) string {
+	// Remove NULL chars
+	modified := strings.Replace(payload, "\u0000", ",", -1)
+	// Remove carriage returns
+	re := regexp.MustCompile(`\r?\n`)
+	return re.ReplaceAllString(modified, "")
+}
+
 func main() {
 	// Serial Port connection
 	portName := util.GetEnvWithFallback("SERIAL_PORT", "/dev/ttyS0")
@@ -75,22 +84,25 @@ func main() {
 	defer cancel()
 
 	log.Printf("main - Starting serial read loop")
+	delimiter := util.GetEnvWithFallback("SERIAL_DELIMITER", "\n")
+	log.Printf("main - SERAIL DELIMITER - %s", delimiter)
 	loopStartTime := currentUTCTime()
 	// Outer Loop - Handles timeouts from the serial reader and insert into database
 	for {
 		var data strings.Builder // Build record
-		buff := make([]byte, 2)  // Buffer to hold the data
+		buff := make([]byte, 1)  // Buffer to hold the data
 		// Inner Loop - Reads bytes until terminating character is received
 		for {
 			n, _ := port.Read(buff)
 			if n == 0 {
 				break
 			}
-			if string(buff) == "\r\n" {
+
+			if string(buff) == "\n" {
 				break
 			}
-			for _, byte := range buff {
-				data.WriteByte(byte)
+			for _, element := range buff {
+				data.WriteByte(element)
 			}
 
 		}
@@ -105,9 +117,10 @@ func main() {
 		// Prep the data
 		record := bson.D{
 			{"timestamp", int(currentTime.timestamp)},
-			{"payload", strings.Replace(data.String(), "\u0000", ",", -1)},
+			{"payload", formatPayloadForDatabase(data.String())},
 			{"synced", false},
 		}
+		log.Printf("main - record.Payload - %s", record[1])
 
 		// Insert
 		insertResult, err := client.Database(mp.Database).Collection(mp.Collection).InsertOne(ctx, record)

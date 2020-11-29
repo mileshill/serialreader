@@ -7,15 +7,24 @@ services:
             - $HOME/mongo-volume:/data/db
         ports:
             - '27017-27019:27017-27019'
+        restart: always
+        healthcheck:
+            test: ["CMD", "docker-healthcheck"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
     reader:
         build:
             context: .
             dockerfile: reader.dockerfile
+        image: reader
         container_name: 'reader'
         env_file:
             - general.env
         devices:
             - "/dev/ttyS0:/dev/ttyS0"
+        environment:
+            - HOSTNAME="${HOSTNAME}"
         restart: always
         depends_on:
             - mongodb
@@ -23,6 +32,7 @@ services:
         build:
             context: .
             dockerfile: producer.dockerfile
+        image: producer
         container_name: 'producer'
         env_file:
             - general.env
