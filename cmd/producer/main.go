@@ -23,14 +23,14 @@ type Record struct {
 // RecordForPayload encodes for the HTTP POST to API
 type RecordForPayload struct {
 	Timestamp int    `json:"timestamp_utc_recorded"`
-	Hostname string `json:"hostname"`
+	Hostname  string `json:"hostname"`
 	Payload   string `json:"payload"`
 }
 
 // RequestPayload is the full body to be JSON marshalled for API consumption
 type RequestPayload struct {
 	Timestamp int                `json:"timestamp_utc_transmitted"`
-	Hostname    string             `json:"hostname"`
+	Hostname  string             `json:"hostname"`
 	Data      []RecordForPayload `json:"data"`
 }
 
@@ -72,12 +72,6 @@ func main() {
 	client := util.ConnectToMongo(mp.ContextConnect, mp.URI, mp.Database, mp.Collection)
 	defer client.Disconnect(mp.ContextRequest)
 
-	// Start background process to update records
-	chBSON := make(chan bson.A, 10)
-	for i := 1; i <= 3; i++ {
-		go WorkerUpdateRecords(chBSON, client, mp)
-	}
-
 	// Start background process to delete records
 	go WorkerDeleteRecords(client, mp)
 
@@ -93,7 +87,7 @@ func main() {
 		log.Fatalf("Error - `API` not set in environment")
 	}
 
-	batchSize := 25  // Max size allowed by Dynamodb
+	batchSize := 25 // Max size allowed by Dynamodb
 	for {
 		cursor := util.GetNextBatch(client, mp, batchSize)
 
@@ -114,7 +108,7 @@ func main() {
 		for _, rec := range records {
 			recordsPayload = append(recordsPayload, RecordForPayload{
 				Timestamp: rec.Timestamp,
-				Hostname: device,
+				Hostname:  device,
 				Payload:   rec.Payload,
 			})
 		}
@@ -122,7 +116,7 @@ func main() {
 		// Build payload from cursor to send to API
 		payload := &RequestPayload{
 			Timestamp: int(time.Now().Unix()),
-			Hostname:    device,
+			Hostname:  device,
 			Data:      removeDuplicateRecords(recordsPayload),
 		}
 		payloadMarshal, err := json.Marshal(payload)
@@ -147,7 +141,6 @@ func main() {
 			log.Printf("Synced %d records to API", len(payload.Data))
 		}
 
-
 		// Array of ids to update
 		var syncedIds bson.A
 		for _, rec := range records {
@@ -157,8 +150,7 @@ func main() {
 			}
 			syncedIds = append(syncedIds, id)
 		}
-		chBSON<- syncedIds
-
+		util.UpdateSyncStatus(client, mp, syncedIds)
 	}
 
 }
