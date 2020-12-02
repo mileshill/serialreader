@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"github.com/mileshill/serialreader/cmd/util"
 	"go.mongodb.org/mongo-driver/bson"
@@ -86,7 +87,7 @@ func main() {
 	if apiUrl == "" {
 		log.Fatalf("Error - `API` not set in environment")
 	}
-
+	httpClient := &http.Client{}
 	batchSize := 25 // Max size allowed by Dynamodb
 	for {
 		cursor := util.GetNextBatch(client, mp, batchSize)
@@ -120,12 +121,31 @@ func main() {
 			Data:      removeDuplicateRecords(recordsPayload),
 		}
 		payloadMarshal, err := json.Marshal(payload)
-
 		if err != nil {
 			log.Fatalf("Failed to marshal to json - %v", err)
 		}
+		var payloadBuffer bytes.Buffer
+		gz := gzip.NewWriter(&payloadBuffer)
+		_, err = gz.Write(payloadMarshal)
+		if err != nil {
+			log.Fatalf("Failed to zip marshalled json - %v", err)
+		}
+		err = gz.Close()
+		if err != nil {
+			log.Fatalf("Failed to close zipped payload - %v", err)
+		}
 
-		resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))
+
+		//resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))
+		req, err := http.NewRequest("POST", apiUrl, &payloadBuffer)
+		if err != nil {
+			log.Fatalf("Failed to create new POST request object - %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("Content-Encoding", "gzip")
+		resp, err := httpClient.Do(req)
+
+		//resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))
 		if err != nil {
 			log.Fatalf("Error POST to API  - %v", err)
 		}
