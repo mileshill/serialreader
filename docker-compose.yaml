@@ -13,8 +13,6 @@ services:
         environment:
             - HOSTNAME="${HOSTNAME}"
         restart: always
-        depends_on:
-            - mongodb
     producer:
         build:
             context: .
@@ -24,5 +22,3 @@ services:
         env_file:
             - general.env
         restart: always
-        depends_on:
-            - mongodb
