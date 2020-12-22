@@ -10,6 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -35,6 +37,16 @@ type RequestPayload struct {
 	Data      []RecordForPayload `json:"data"`
 }
 
+type PingServerPayload struct {
+	Hostname string `json:"hostname"`
+	Timestamp int `json:"timestamp_utc"`
+	LastRecordTimestamp int `json:"timestamp_utc_recorded_last"`
+	Delta int `json:"delta_ping_last_record_seconds"`
+}
+
+// lastRecordTime
+var lastRecordTime int
+
 // WorkerUpdateRecords is a background process for updating the records in the database.
 // Pushing the workload off the main thread ensures data are consumed quickly and updates
 // of those data are non-blocking
@@ -43,6 +55,73 @@ func WorkerUpdateRecords(ch <-chan bson.A, client *mongo.Client, mp util.MongoPa
 		util.UpdateSyncStatus(client, mp, synced)
 	}
 }
+
+// Worker
+func WorkerPingServer(){
+	url := os.Getenv("API_URL_PING")
+	if url == "" {
+		log.Printf("main.WorkerPingServer - ENV=API_URL_PING not found. Restart once var is set")
+		return
+	}
+	device := util.GetEnvWithFallback("HOSTNAME", "")
+	if device == "" {
+		log.Fatalf("main - HOSTNAME not set as env var")
+	}
+	for {
+		currentTime := int(time.Now().Unix())
+		pingPayload := &PingServerPayload{
+			Hostname: device,
+			Timestamp: currentTime,
+			LastRecordTimestamp: lastRecordTime,
+			Delta: currentTime - lastRecordTime,
+		}
+
+		payloadMarshal, err := json.Marshal(pingPayload)
+		if err != nil {
+			log.Fatalf("ERROR: main.WorkerPingServer - %v", err)
+		}
+		// Make request here
+		var payloadBuffer bytes.Buffer
+		gz := gzip.NewWriter(&payloadBuffer)
+		numBytes, err := gz.Write(payloadMarshal)
+		if err != nil {
+			log.Fatalf("Failed to zip marshalled json - %v", err)
+		}
+		err = gz.Close()
+		if err != nil {
+			log.Fatalf("Failed to close zipped payload - %v", err)
+		}
+
+		req, err := http.NewRequest("POST", url, &payloadBuffer)
+		if err != nil {
+			log.Fatalf("ERROR: main.WorkerPingServer - Failed to create new POST request object - %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Content-Length", strconv.Itoa(numBytes))
+
+		httpClient := &http.Client{}
+		resp, err := httpClient.Do(req)
+
+		if err != nil {
+			log.Fatalf("Error POST to API %s - %v", url, err)
+		}
+		if resp.StatusCode != 201 {
+			var body []byte
+			_, err := resp.Body.Read(body)
+			if err != nil {
+				log.Fatalf("Failed to decode API response with Code %d - %v", resp.StatusCode, err)
+			}
+			log.Fatalf("Failed to write to API - %s", string(body))
+		}
+		if resp.StatusCode == 201 {
+			log.Printf("main.WorkerPingServer - Successfully pinged server")
+		}
+	}
+}
+
+
+
 
 // WorkerDeleteRecords periodically removes any synced records from the database. This allows the
 // database to remain lightweight and the query performance to be maintained
@@ -66,6 +145,17 @@ func removeDuplicateRecords(records []RecordForPayload) []RecordForPayload {
 	return list
 }
 
+func setMaxRecordTime(records []RecordForPayload) {
+	max := 0
+	for _, rec := range records{
+		if rec.Timestamp > max {
+			max = rec.Timestamp
+		}
+	}
+	lastRecordTime = max  // Updates the global var
+}
+
+
 // main
 func main() {
 	// Connect to Mongo
@@ -75,6 +165,7 @@ func main() {
 
 	// Start background process to delete records
 	go WorkerDeleteRecords(client, mp)
+	go WorkerPingServer()
 
 	// Host info
 	device := util.GetEnvWithFallback("HOSTNAME", "")
@@ -83,7 +174,7 @@ func main() {
 	}
 
 	// Get oldest non-synced records
-	apiUrl := util.GetEnvWithFallback("API_ENDPOINT", "")
+	apiUrl := util.GetEnvWithFallback("API_ENDPOINT", "") // Base end point
 	if apiUrl == "" {
 		log.Fatalf("Error - `API` not set in environment")
 	}
@@ -113,7 +204,7 @@ func main() {
 				SerialPort: rec.SerialPort,
 			})
 		}
-
+		go setMaxRecordTime(recordsPayload) // Update in the background
 		// Build payload from cursor to send to API
 		payload := &RequestPayload{
 			Timestamp: int(time.Now().Unix()),
@@ -126,7 +217,7 @@ func main() {
 		}
 		var payloadBuffer bytes.Buffer
 		gz := gzip.NewWriter(&payloadBuffer)
-		_, err = gz.Write(payloadMarshal)
+		numBytes, err := gz.Write(payloadMarshal)
 		if err != nil {
 			log.Fatalf("Failed to zip marshalled json - %v", err)
 		}
@@ -142,6 +233,7 @@ func main() {
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Content-Length", strconv.Itoa(numBytes))
 		resp, err := httpClient.Do(req)
 
 		//resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))

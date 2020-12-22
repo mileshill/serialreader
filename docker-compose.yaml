@@ -4,8 +4,8 @@ services:
         build:
             context: .
             dockerfile: reader.dockerfile
-        image: reader
-        container_name: 'reader'
+        image: '764201992552.dkr.ecr.us-east-1.amazonaws.com/rivitt-serial-reader'
+        container_name: reader
         env_file:
             - general.env
         devices:
@@ -21,8 +21,10 @@ services:
         build:
             context: .
             dockerfile: producer.dockerfile
-        image: producer
+        image: '764201992552.dkr.ecr.us-east-1.amazonaws.com/rivitt-serial-producer'
         container_name: 'producer'
         env_file:
             - general.env
+        environment:
+            - HOSTNAME="${HOSTNAME}"
         restart: always
