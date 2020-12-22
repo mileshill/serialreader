@@ -10,6 +10,10 @@ services:
             - general.env
         devices:
             - "/dev/ttyS0:/dev/ttyS0"
+            - "/dev/ttyS1:/dev/ttyS1"
+            - "/dev/ttyS2:/dev/ttyS2"
+            - "/dev/ttyS3:/dev/ttyS3"
+            - "/dev/ttyS4:/dev/ttyS4"
         environment:
             - HOSTNAME="${HOSTNAME}"
         restart: always

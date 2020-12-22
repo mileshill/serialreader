@@ -119,6 +119,7 @@ func main() {
 			{"timestamp", int(currentTime.timestamp)},
 			{"payload", formatPayloadForDatabase(data.String())},
 			{"synced", false},
+			{"serialPort", portName},
 		}
 		log.Printf("main - record.Payload - %s", record[1])
 

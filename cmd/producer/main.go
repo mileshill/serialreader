@@ -15,17 +15,17 @@ import (
 
 // Record is for decoding the mongo queries
 type Record struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	Timestamp int                `json:"timestamp"`
-	Device    string             `json:"device"`
-	Payload   string             `json:"payload"`
+	ID         primitive.ObjectID `bson:"_id,omitempty"`
+	Timestamp  int                `json:"timestamp"`
+	Payload    string             `json:"payload"`
+	SerialPort string             `json:"serialPort"`
 }
 
 // RecordForPayload encodes for the HTTP POST to API
 type RecordForPayload struct {
-	Timestamp int    `json:"timestamp_utc_recorded"`
-	Hostname  string `json:"hostname"`
-	Payload   string `json:"payload"`
+	Timestamp  int    `json:"timestamp_utc_recorded"`
+	Payload    string `json:"payload"`
+	SerialPort string `json:"serialPort"`
 }
 
 // RequestPayload is the full body to be JSON marshalled for API consumption
@@ -108,9 +108,9 @@ func main() {
 		var recordsPayload []RecordForPayload
 		for _, rec := range records {
 			recordsPayload = append(recordsPayload, RecordForPayload{
-				Timestamp: rec.Timestamp,
-				Hostname:  device,
-				Payload:   rec.Payload,
+				Timestamp:  rec.Timestamp,
+				Payload:    rec.Payload,
+				SerialPort: rec.SerialPort,
 			})
 		}
 
@@ -134,7 +134,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to close zipped payload - %v", err)
 		}
-
 
 		//resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(payloadMarshal))
 		req, err := http.NewRequest("POST", apiUrl, &payloadBuffer)
