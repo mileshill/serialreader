@@ -98,7 +98,7 @@ func main() {
 				break
 			}
 
-			if string(buff) == "\n" {
+			if string(buff) == delimiter {
 				break
 			}
 			for _, element := range buff {

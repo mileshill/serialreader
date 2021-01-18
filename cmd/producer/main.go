@@ -68,6 +68,7 @@ func WorkerPingServer(){
 		log.Fatalf("main - HOSTNAME not set as env var")
 	}
 	for {
+		time.Sleep(60 * time.Second)
 		currentTime := int(time.Now().Unix())
 		pingPayload := &PingServerPayload{
 			Hostname: device,
@@ -112,7 +113,7 @@ func WorkerPingServer(){
 			if err != nil {
 				log.Fatalf("Failed to decode API response with Code %d - %v", resp.StatusCode, err)
 			}
-			log.Fatalf("Failed to write to API - %s", string(body))
+			log.Fatalf("Failed to write PING to API - %s", string(body))
 		}
 		if resp.StatusCode == 201 {
 			log.Printf("main.WorkerPingServer - Successfully pinged server")
